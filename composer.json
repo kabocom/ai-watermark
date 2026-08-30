@@ -1,0 +1,35 @@
+{
+    "name": "kabocom/ai-watermark",
+    "description": "Bakes a legally-required 'KI-generiert' watermark into any Glide-rendered image whose asset is flagged as AI-generated",
+    "autoload": {
+        "psr-4": {
+            "Kabocom\\AiWatermark\\": "src"
+        }
+    },
+    "require": {
+        "statamic/cms": "^6.0"
+    },
+    "type": "statamic-addon",
+    "extra": {
+        "statamic": {
+            "name": "AI Watermark",
+            "description": "Bakes a 'KI-generiert' watermark into AI-flagged images wherever they're rendered through Glide"
+        },
+        "laravel": {
+            "providers": [
+                "Kabocom\\AiWatermark\\ServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "license": [
+        "MIT"
+    ],
+    "keywords": [
+        "statamic",
+        "glide",
+        "watermark",
+        "ai"
+    ]
+}
