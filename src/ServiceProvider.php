@@ -3,6 +3,8 @@
 namespace Kabocom\AiWatermark;
 
 use Illuminate\Support\Facades\File;
+use Kabocom\AiWatermark\Concerns\ResolvesWatermarkContainer;
+use Statamic\Facades\Asset;
 use Statamic\Facades\GlobalSet;
 use Statamic\Facades\Site;
 use Statamic\Facades\YAML;
@@ -10,9 +12,12 @@ use Statamic\Providers\AddonServiceProvider;
 
 class ServiceProvider extends AddonServiceProvider
 {
+    use ResolvesWatermarkContainer;
+
     public function bootAddon()
     {
         $this->publishBlueprint();
+        $this->publishDefaultImages();
         $this->provisionGlobalSet();
     }
 
@@ -33,6 +38,7 @@ class ServiceProvider extends AddonServiceProvider
         }
 
         $labels = config('ai-watermark.labels');
+        $container = $this->watermarkContainer()?->handle();
 
         File::makeDirectory(dirname($path), 0755, true, true);
 
@@ -50,7 +56,7 @@ class ServiceProvider extends AddonServiceProvider
                                     'field' => [
                                         'type' => 'assets',
                                         'display' => $labels['global_watermark_dark'],
-                                        'container' => config('ai-watermark.watermark_container'),
+                                        'container' => $container,
                                         'max_files' => 1,
                                         'width' => 50,
                                     ],
@@ -60,7 +66,7 @@ class ServiceProvider extends AddonServiceProvider
                                     'field' => [
                                         'type' => 'assets',
                                         'display' => $labels['global_watermark_light'],
-                                        'container' => config('ai-watermark.watermark_container'),
+                                        'container' => $container,
                                         'max_files' => 1,
                                         'width' => 50,
                                     ],
@@ -111,8 +117,6 @@ class ServiceProvider extends AddonServiceProvider
             return;
         }
 
-        $this->publishDefaultImages();
-
         $set = (new \Statamic\Globals\GlobalSet)
             ->handle($handle)
             ->title(config('ai-watermark.labels.global_set_title'));
@@ -130,32 +134,35 @@ class ServiceProvider extends AddonServiceProvider
     }
 
     /**
-     * Copies the addon's bundled default PNGs onto the project's `site`
-     * asset container disk (files in vendor/ aren't web-servable). Glide's
-     * watermark compositor reads straight off this disk via Flysystem, not
-     * through the Stache, so the front-end works immediately — the CP asset
-     * picker for these two files will just catch up on its own next natural
-     * Stache refresh, deliberately not forced here since that's a heavy,
-     * site-wide operation and not worth doing inline on a random request.
+     * Copies the addon's bundled default PNGs onto the watermark
+     * container's disk (files in vendor/ aren't web-servable) and writes
+     * their `.meta/*.yaml` sidecar files too, via `Asset::meta()` — the
+     * same generation Statamic itself uses, so the CP asset picker shows
+     * them correctly right away instead of waiting for the next natural
+     * Stache refresh. Both steps are per-file idempotent (skipped if the
+     * PNG or its meta file already exists), so this is safe to re-run on
+     * every boot indefinitely.
      */
     private function publishDefaultImages(): void
     {
-        $disk = \Statamic\Facades\AssetContainer::findByHandle(config('ai-watermark.watermark_container'))?->disk()->filesystem();
+        $container = $this->watermarkContainer();
 
-        if (! $disk) {
+        if (! $container) {
             return;
         }
+
+        $disk = $container->disk()->filesystem();
 
         foreach (['ki-generiert-dark.png', 'ki-generiert-light.png'] as $file) {
             $target = "watermark/{$file}";
 
-            if ($disk->exists($target)) {
-                continue;
+            if (! $disk->exists($target)) {
+                $source = $this->getAddon()->directory().'resources/watermarks/'.$file;
+
+                $disk->put($target, file_get_contents($source));
             }
 
-            $source = $this->getAddon()->directory().'resources/watermarks/'.$file;
-
-            $disk->put($target, file_get_contents($source));
+            Asset::make()->container($container)->path($target)->meta();
         }
     }
 }

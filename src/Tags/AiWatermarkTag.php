@@ -2,6 +2,7 @@
 
 namespace Kabocom\AiWatermark\Tags;
 
+use Kabocom\AiWatermark\Concerns\ResolvesWatermarkContainer;
 use Statamic\Contracts\Assets\Asset as AssetContract;
 use Statamic\Contracts\Data\Augmentable;
 use Statamic\Facades\Asset;
@@ -12,6 +13,8 @@ use Statamic\Tags\Tags;
 
 class AiWatermarkTag extends Tags
 {
+    use ResolvesWatermarkContainer;
+
     protected static $handle = 'ai_watermark';
 
     /**
@@ -94,8 +97,8 @@ class AiWatermarkTag extends Tags
         $variant = $asset->get('watermark_variant', 'dark');
         $markAsset = $global->get($variant === 'light' ? 'watermark_light' : 'watermark_dark');
         $markAsset = is_array($markAsset) ? ($markAsset[0] ?? null) : $markAsset;
-        $container = config('ai-watermark.watermark_container');
-        $markAsset = is_string($markAsset) ? Asset::find("{$container}::{$markAsset}") : $markAsset;
+        $container = $this->watermarkContainer()?->handle();
+        $markAsset = is_string($markAsset) && $container ? Asset::find("{$container}::{$markAsset}") : $markAsset;
 
         if (! $markAsset || ! ($mark = $this->markPath($markAsset))) {
             return [null, null, null, null];
