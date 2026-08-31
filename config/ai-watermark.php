@@ -28,6 +28,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Watermark image container
+    |--------------------------------------------------------------------------
+    |
+    | Which asset container the two watermark badge images (and the
+    | addon's bundled defaults, on first install) live in. Must be a
+    | container whose disk is web-servable — Glide's watermark compositor
+    | reads straight off disk relative to public_path(), so a disk that
+    | isn't inside the public webroot won't work here.
+    |
+    */
+
+    'watermark_container' => 'site',
+
+    /*
+    |--------------------------------------------------------------------------
     | Labels
     |--------------------------------------------------------------------------
     |

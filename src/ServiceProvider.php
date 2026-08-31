@@ -50,7 +50,7 @@ class ServiceProvider extends AddonServiceProvider
                                     'field' => [
                                         'type' => 'assets',
                                         'display' => $labels['global_watermark_dark'],
-                                        'container' => 'site',
+                                        'container' => config('ai-watermark.watermark_container'),
                                         'max_files' => 1,
                                         'width' => 50,
                                     ],
@@ -60,7 +60,7 @@ class ServiceProvider extends AddonServiceProvider
                                     'field' => [
                                         'type' => 'assets',
                                         'display' => $labels['global_watermark_light'],
-                                        'container' => 'site',
+                                        'container' => config('ai-watermark.watermark_container'),
                                         'max_files' => 1,
                                         'width' => 50,
                                     ],
@@ -140,7 +140,7 @@ class ServiceProvider extends AddonServiceProvider
      */
     private function publishDefaultImages(): void
     {
-        $disk = \Statamic\Facades\AssetContainer::findByHandle('site')?->disk()->filesystem();
+        $disk = \Statamic\Facades\AssetContainer::findByHandle(config('ai-watermark.watermark_container'))?->disk()->filesystem();
 
         if (! $disk) {
             return;

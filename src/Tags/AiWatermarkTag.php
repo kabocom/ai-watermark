@@ -94,9 +94,10 @@ class AiWatermarkTag extends Tags
         $variant = $asset->get('watermark_variant', 'dark');
         $markAsset = $global->get($variant === 'light' ? 'watermark_light' : 'watermark_dark');
         $markAsset = is_array($markAsset) ? ($markAsset[0] ?? null) : $markAsset;
-        $markAsset = is_string($markAsset) ? Asset::find("site::{$markAsset}") : $markAsset;
+        $container = config('ai-watermark.watermark_container');
+        $markAsset = is_string($markAsset) ? Asset::find("{$container}::{$markAsset}") : $markAsset;
 
-        if (! $markAsset) {
+        if (! $markAsset || ! ($mark = $this->markPath($markAsset))) {
             return [null, null, null, null];
         }
 
@@ -105,10 +106,33 @@ class AiWatermarkTag extends Tags
         $padding = $global->get('watermark_padding', config('ai-watermark.default_padding'));
 
         return [
-            'site/'.$markAsset->path(),
+            $mark,
             $position,
             "{$width}w",
             "{$padding}w",
         ];
+    }
+
+    /**
+     * Glide's watermark filesystem is rooted at public_path() (Statamic's
+     * default `statamic.assets.image_manipulation` config), so the `mark`
+     * parameter needs to be a path relative to public_path() — not
+     * relative to the asset's own container. Derives that by comparing
+     * the asset's disk's configured root against public_path(), rather
+     * than assuming any particular container/disk name.
+     */
+    private function markPath(AssetContract $markAsset): ?string
+    {
+        $diskHandle = $markAsset->container()->diskHandle();
+        $root = rtrim((string) config("filesystems.disks.{$diskHandle}.root"), '/');
+        $publicPath = rtrim(public_path(), '/');
+
+        if (! $root || ! str_starts_with($root, $publicPath)) {
+            return null;
+        }
+
+        $prefix = trim(substr($root, strlen($publicPath)), '/');
+
+        return trim($prefix.'/'.$markAsset->path(), '/');
     }
 }
