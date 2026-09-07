@@ -37,9 +37,41 @@ class AiWatermarkTag extends Tags
 
     private function generate($item)
     {
-        $asset = $this->normalize($item);
+        if ($item instanceof \Illuminate\Support\Collection || is_array($item)) {
+            return $this->generateMany($item);
+        }
 
-        $manipulator = Image::manipulate($asset ?? $item);
+        return $this->build($this->normalize($item), $item);
+    }
+
+    /**
+     * A multi-value assets field (no `max_files: 1`) resolves here as a
+     * collection/array of assets rather than a single one. Watermark
+     * each of them: as a pair tag this loops once per asset (same as
+     * looping over the field itself), as a bare tag (a single url is
+     * expected) it uses the first one.
+     */
+    private function generateMany($items)
+    {
+        $assets = collect($items)
+            ->map(fn ($entry) => $this->normalize($entry))
+            ->filter()
+            ->values();
+
+        if ($assets->isEmpty()) {
+            return $this->isPair ? [] : null;
+        }
+
+        if (! $this->isPair) {
+            return $this->build($assets->first(), $assets->first());
+        }
+
+        return $assets->map(fn ($asset) => $this->build($asset, $asset))->all();
+    }
+
+    private function build(?AssetContract $asset, $manipulateTarget)
+    {
+        $manipulator = Image::manipulate($asset ?? $manipulateTarget);
 
         foreach ($this->params->except(['src', 'id', 'path']) as $param => $value) {
             $manipulator->{$param}($value);
