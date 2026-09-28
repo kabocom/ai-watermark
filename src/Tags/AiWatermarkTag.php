@@ -37,9 +37,19 @@ class AiWatermarkTag extends Tags
     {
         $field = explode(':', $this->tag, 2)[1] ?? $method;
 
-        $item = $this->context->value($field);
+        $result = $this->generate($this->context->value($field));
 
-        return $this->generate($item);
+        if (! $this->isPair) {
+            return $result && $this->params->bool('tag')
+                ? "<img src=\"{$result}\" alt=\"{$this->params->get('alt')}\" />"
+                : $result;
+        }
+
+        if ($alias = $this->params->get('as')) {
+            return [$alias => array_is_list($result) ? $result : [$result]];
+        }
+
+        return $result;
     }
 
     private function generate($item)
@@ -103,9 +113,19 @@ class AiWatermarkTag extends Tags
 
     private function buildOrFail(?AssetContract $asset, $manipulateTarget)
     {
-        $manipulator = Image::manipulate($asset ?? $manipulateTarget);
+        $source = $asset ?? $manipulateTarget;
 
-        foreach ($this->params->except(['src', 'id', 'path']) as $param => $value) {
+        // Like {{ glide:image }}, files Glide can't process (SVG, PDF, ...)
+        // are passed through untouched, so they can't get a mark either.
+        if (! $this->isManipulable($source)) {
+            $url = $this->outputUrl((string) ($asset ? $asset->url() : $manipulateTarget), false);
+
+            return $this->isPair ? $this->pairData($asset, ['url' => $url]) : $url;
+        }
+
+        $manipulator = Image::manipulate($source);
+
+        foreach ($this->params->except(['src', 'id', 'path', 'tag', 'alt', 'absolute', 'as']) as $param => $value) {
             $manipulator->{$param}($value);
         }
 
@@ -118,7 +138,7 @@ class AiWatermarkTag extends Tags
             ->markpad($markPad)
             ->markalpha('100');
 
-        $url = $manipulator->build();
+        $url = $this->outputUrl($manipulator->build(), true);
 
         if (! $this->isPair) {
             return $url;
@@ -126,14 +146,35 @@ class AiWatermarkTag extends Tags
 
         // Same as {{ glide:image }}: `width`/`height` inside the pair are the
         // manipulated image's dimensions, not the source asset's, so they
-        // override the asset's augmented values below.
-        $data = array_merge(['url' => $url], $this->generatedAttributes($asset ?? $manipulateTarget, $manipulator->getParams()));
+        // override the asset's augmented values.
+        return $this->pairData($asset, array_merge(['url' => $url], $this->generatedAttributes($source, $manipulator->getParams())));
+    }
 
+    private function pairData(?AssetContract $asset, array $data): array
+    {
         if ($asset instanceof Augmentable) {
             $data = array_merge($asset->toAugmentedArray(), $data);
         }
 
         return $data;
+    }
+
+    private function isManipulable($item): bool
+    {
+        $path = $item instanceof AssetContract ? $item->path() : (string) $item;
+
+        return ImageValidator::isValidExtension(Path::extension($path));
+    }
+
+    /**
+     * Relative unless `absolute="true"` or Glide's route is absolute,
+     * same as {{ glide:image }}.
+     */
+    private function outputUrl(string $url, bool $manipulated): string
+    {
+        $default = (! $manipulated && URL::isAbsolute($url)) || URL::isAbsolute(GlideManager::url());
+
+        return $this->params->bool('absolute', $default) ? URL::makeAbsolute($url) : URL::makeRelative($url);
     }
 
     /**
@@ -143,10 +184,6 @@ class AiWatermarkTag extends Tags
     private function generatedAttributes($item, array $params): array
     {
         $path = $item instanceof AssetContract ? $item->path() : (string) $item;
-
-        if (! ImageValidator::isValidExtension(Path::extension($path))) {
-            return [];
-        }
 
         $generator = app(ImageGenerator::class);
 
