@@ -8,6 +8,7 @@ use Kabocom\AiWatermark\Concerns\ResolvesWatermarkContainer;
 use Statamic\Contracts\Assets\Asset as AssetContract;
 use Statamic\Contracts\Data\Augmentable;
 use Statamic\Facades\Asset;
+use Statamic\Facades\Compare;
 use Statamic\Facades\Glide as GlideManager;
 use Statamic\Facades\GlobalSet;
 use Statamic\Facades\Image;
@@ -43,6 +44,12 @@ class AiWatermarkTag extends Tags
 
     private function generate($item)
     {
+        // An assets field without `max_files: 1` augments to a query
+        // builder, not a collection. Resolve it like {{ glide }} does.
+        if (Compare::isQueryBuilder($item)) {
+            $item = $item->get();
+        }
+
         if ($item instanceof \Illuminate\Support\Collection || is_array($item)) {
             return $this->generateMany($item);
         }
