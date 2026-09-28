@@ -2,13 +2,19 @@
 
 namespace Kabocom\AiWatermark\Tags;
 
+use Facades\Statamic\Imaging\Attributes;
+use Facades\Statamic\Imaging\ImageValidator;
 use Kabocom\AiWatermark\Concerns\ResolvesWatermarkContainer;
 use Statamic\Contracts\Assets\Asset as AssetContract;
 use Statamic\Contracts\Data\Augmentable;
 use Statamic\Facades\Asset;
+use Statamic\Facades\Glide as GlideManager;
 use Statamic\Facades\GlobalSet;
 use Statamic\Facades\Image;
+use Statamic\Facades\Path;
 use Statamic\Facades\Site;
+use Statamic\Facades\URL;
+use Statamic\Imaging\ImageGenerator;
 use Statamic\Tags\Tags;
 
 class AiWatermarkTag extends Tags
@@ -41,6 +47,10 @@ class AiWatermarkTag extends Tags
             return $this->generateMany($item);
         }
 
+        if (blank($item)) {
+            return $this->isPair ? [] : null;
+        }
+
         return $this->build($this->normalize($item), $item);
     }
 
@@ -66,10 +76,25 @@ class AiWatermarkTag extends Tags
             return $this->build($assets->first(), $assets->first());
         }
 
-        return $assets->map(fn ($asset) => $this->build($asset, $asset))->all();
+        return $assets->map(fn ($asset) => $this->build($asset, $asset))->filter()->values()->all();
     }
 
+    /**
+     * Like {{ glide:image }}, a broken source (missing asset, unreadable
+     * file, ...) is logged and renders nothing instead of failing the page.
+     */
     private function build(?AssetContract $asset, $manipulateTarget)
+    {
+        try {
+            return $this->buildOrFail($asset, $manipulateTarget);
+        } catch (\Exception $e) {
+            \Log::error($e->getMessage());
+
+            return $this->isPair ? [] : null;
+        }
+    }
+
+    private function buildOrFail(?AssetContract $asset, $manipulateTarget)
     {
         $manipulator = Image::manipulate($asset ?? $manipulateTarget);
 
@@ -92,13 +117,39 @@ class AiWatermarkTag extends Tags
             return $url;
         }
 
-        $data = ['url' => $url];
+        // Same as {{ glide:image }}: `width`/`height` inside the pair are the
+        // manipulated image's dimensions, not the source asset's, so they
+        // override the asset's augmented values below.
+        $data = array_merge(['url' => $url], $this->generatedAttributes($asset ?? $manipulateTarget, $manipulator->getParams()));
 
         if ($asset instanceof Augmentable) {
             $data = array_merge($asset->toAugmentedArray(), $data);
         }
 
         return $data;
+    }
+
+    /**
+     * Generates the image (a cache hit for the URL built above, since the
+     * params are identical) and reads its actual width/height.
+     */
+    private function generatedAttributes($item, array $params): array
+    {
+        $path = $item instanceof AssetContract ? $item->path() : (string) $item;
+
+        if (! ImageValidator::isValidExtension(Path::extension($path))) {
+            return [];
+        }
+
+        $generator = app(ImageGenerator::class);
+
+        $generated = match (true) {
+            $item instanceof AssetContract => $generator->generateByAsset($item, $params),
+            URL::isAbsolute($path) => $generator->generateByUrl($path, $params),
+            default => $generator->generateByPath($path, $params),
+        };
+
+        return Attributes::from(GlideManager::cacheDisk(), $generated);
     }
 
     private function normalize($item)
